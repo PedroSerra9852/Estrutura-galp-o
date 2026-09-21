@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Visualizador 3D — Galpão 30x60m (Grupo 6 - CBCA 2026)</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+  :root{
+    --bg:#0e1420; --panel:#141c2b; --line:#7fd0ff; --line2:#ffb454; --text:#e7eef7; --muted:#93a3b8;
+  }
+  @media (prefers-color-scheme: light){
+    :root:not([data-theme="dark"]){ --bg:#eef2f7; --panel:#ffffff; --line:#1d6fa5; --line2:#c96a0a; --text:#132033; --muted:#57708a; }
+  }
+  html,body{height:100%;margin:0;background:var(--bg);color:var(--text);
+    font-family:-apple-system,'Segoe UI',Roboto,sans-serif;overflow:hidden;
+    padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);}
+  #ui{position:fixed;top:calc(12px + env(safe-area-inset-top,0px));left:12px;z-index:5;
+      background:var(--panel);border-radius:10px;padding:10px 14px;max-width:78vw;
+      box-shadow:0 4px 18px rgba(0,0,0,.25); font-size:13px;}
+  #ui h1{font-size:14px;margin:0 0 4px 0;}
+  #ui p{margin:2px 0;color:var(--muted);font-size:11.5px;}
+  #hint{position:fixed;bottom:calc(10px + env(safe-area-inset-bottom,0px));left:0;right:0;
+        text-align:center;color:var(--muted);font-size:11px;z-index:5;}
+  canvas{display:block;touch-action:none;}
+</style>
+</head>
+<body>
+<div id="ui">
+  <h1>Galpão Industrial 30,00 x 60,00 m</h1>
+  <p>Desafio CBCA 2026 — Grupo 6 (Carlos, Pedro, Marcos)</p>
+  <p>16 pórticos de alma cheia @ 4,00m | terças @ 1,50m | contraventamento nos vãos extremos</p>
+</div>
+<div id="hint">arraste para girar · pinça/roda para zoom</div>
+<script>
+const scene = new THREE.Scene();
+function bg(){ return getComputedStyle(document.body).backgroundColor; }
+scene.background = new THREE.Color(0x0e1420);
+const mqDark = window.matchMedia('(prefers-color-scheme: dark)');
+function isDark(){ return document.documentElement.getAttribute('data-theme')==='dark' ||
+  (document.documentElement.getAttribute('data-theme')!=='light' && mqDark.matches); }
+function applyTheme(){ scene.background = new THREE.Color(isDark()?0x0e1420:0xeef2f7); }
+applyTheme(); mqDark.addEventListener('change', applyTheme);
+
+const camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 0.1, 500);
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.body.appendChild(renderer.domElement);
+
+// ---------- geometria do galpao (m) ----------
+const L=60, VAO=30, H_EAVE=6, H_RIDGE=9, ESP=4, N_PORT=16, S_TERCA=1.5;
+const colLine = 0x7fd0ff, colLine2 = 0xffb454, colPurlin = 0x3d7ab8;
+
+function addLine(pts, color, opacity){
+  const g = new THREE.BufferGeometry().setFromPoints(pts.map(p=>new THREE.Vector3(p[0],p[1],p[2])));
+  const m = new THREE.LineBasicMaterial({color:color, transparent:true, opacity: opacity||1});
+  scene.add(new THREE.Line(g,m));
+}
+// eixo X = comprimento (0..60), eixo Z = vao (0..30), eixo Y = altura
+const group = new THREE.Group();
+scene.add(group);
+
+for(let i=0;i<N_PORT;i++){
+  const x = i*ESP;
+  const pts = [
+    [x,0,0],[x,H_EAVE,0],[x,H_RIDGE,VAO/2],[x,H_EAVE,VAO],[x,0,VAO]
+  ];
+  addLine(pts, colLine);
+}
+// longarinas de cumeeira e beirais (linhas ao longo do comprimento)
+addLine([[0,H_RIDGE,VAO/2],[L,H_RIDGE,VAO/2]], colLine, 0.6);
+addLine([[0,H_EAVE,0],[L,H_EAVE,0]], colLine, 0.6);
+addLine([[0,H_EAVE,VAO],[L,H_EAVE,VAO]], colLine, 0.6);
+addLine([[0,0,0],[L,0,0]], colLine, 0.4);
+addLine([[0,0,VAO],[L,0,VAO]], colLine, 0.4);
+
+// tercas (linhas finas ao longo do comprimento, em cada nivel z ao longo da agua)
+const rafterLen = Math.hypot(VAO/2, H_RIDGE-H_EAVE);
+const nLinhas = Math.round(rafterLen/S_TERCA);
+for(let j=0;j<=nLinhas;j++){
+  const t=j/nLinhas;
+  const z1 = t*(VAO/2); const y1 = H_EAVE + t*(H_RIDGE-H_EAVE);
+  addLine([[0,y1,z1],[L,y1,z1]], colPurlin, 0.55);
+  const z2 = VAO - t*(VAO/2); const y2 = H_EAVE + t*(H_RIDGE-H_EAVE);
+  addLine([[0,y2,z2],[L,y2,z2]], colPurlin, 0.55);
+}
+
+// contraventamento em X nos vaos extremos (1o e ultimo)
+function addBayX(xa,xb){
+  for(let j=0;j<nLinhas;j++){
+    const t0=j/nLinhas, t1=(j+1)/nLinhas;
+    const z0 = t0*(VAO/2), y0 = H_EAVE+t0*(H_RIDGE-H_EAVE);
+    const z1 = t1*(VAO/2), y1 = H_EAVE+t1*(H_RIDGE-H_EAVE);
+    addLine([[xa,y0,z0],[xb,y1,z1]], colLine2, 0.85);
+    addLine([[xa,y1,z1],[xb,y0,z0]], colLine2, 0.85);
+    const z0b = VAO-z0, z1b = VAO-z1;
+    addLine([[xa,y0,z0b],[xb,y1,z1b]], colLine2, 0.85);
+    addLine([[xa,y1,z1b],[xb,y0,z0b]], colLine2, 0.85);
+  }
+}
+addBayX(0,ESP);
+addBayX((N_PORT-2)*ESP, (N_PORT-1)*ESP);
+
+// piso de referencia
+const grid = new THREE.GridHelper(70, 28, 0x555f70, 0x2a3242);
+grid.position.set(L/2,0,VAO/2);
+scene.add(grid);
+
+// ---------- camera / controles simples (orbit manual) ----------
+let radius=70, theta=0.9, phi=1.05;
+const target = new THREE.Vector3(L/2, 4, VAO/2);
+function updateCam(){
+  camera.position.set(
+    target.x + radius*Math.sin(phi)*Math.cos(theta),
+    target.y + radius*Math.cos(phi),
+    target.z + radius*Math.sin(phi)*Math.sin(theta)
+  );
+  camera.lookAt(target);
+}
+updateCam();
+let dragging=false, lastX=0,lastY=0;
+function down(x,y){dragging=true;lastX=x;lastY=y;}
+function move(x,y){
+  if(!dragging) return;
+  theta -= (x-lastX)*0.005;
+  phi   -= (y-lastY)*0.005;
+  phi = Math.max(0.25, Math.min(1.5, phi));
+  lastX=x; lastY=y; updateCam();
+}
+function up(){dragging=false;}
+renderer.domElement.addEventListener('mousedown', e=>down(e.clientX,e.clientY));
+window.addEventListener('mousemove', e=>move(e.clientX,e.clientY));
+window.addEventListener('mouseup', up);
+renderer.domElement.addEventListener('touchstart', e=>{const t=e.touches[0]; down(t.clientX,t.clientY);}, {passive:true});
+renderer.domElement.addEventListener('touchmove', e=>{const t=e.touches[0]; move(t.clientX,t.clientY);}, {passive:true});
+renderer.domElement.addEventListener('touchend', up);
+renderer.domElement.addEventListener('wheel', e=>{
+  radius = Math.max(20, Math.min(160, radius + e.deltaY*0.05));
+  updateCam();
+}, {passive:true});
+
+window.addEventListener('resize', ()=>{
+  camera.aspect = window.innerWidth/window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+let autoRotate = true;
+renderer.domElement.addEventListener('pointerdown', ()=>autoRotate=false);
+function animate(){
+  requestAnimationFrame(animate);
+  if(autoRotate){ theta += 0.0025; updateCam(); }
+  renderer.render(scene,camera);
+}
+animate();
+</script>
+</body>
+</html>
